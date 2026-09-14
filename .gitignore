@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Resultados de escaneos 
+results/
+*.xml
+*.nmap
+*.gnmap
+
+# Exports de herramientas
+dirsearch_*.json
+nuclei_*.txt
+whatweb_*.txt
+loot/
+loot_*
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config local (si metes credenciales o rutas personales)
+config.local.yaml
+.env
