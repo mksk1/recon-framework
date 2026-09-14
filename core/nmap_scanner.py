@@ -42,9 +42,11 @@ class NmapScanner:
         services = []
         for p in tree.findall(".//port"):
             state = p.find("state")
-            if not state or state.get("state") != "open":
+            if state is None or state.get("state") != "open":
                 continue
-            svc = p.find("service") or {}
+            svc = p.find("service")
+            if svc is None:
+                continue
             services.append({
                 "port": int(p.get("portid")),
                 "proto": p.get("protocol"),
