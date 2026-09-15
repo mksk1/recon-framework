@@ -47,12 +47,21 @@ class NmapScanner:
             svc = p.find("service")
             if svc is None:
                 continue
+            name = svc.get("name", "unknown")
+            product = svc.get("product", "")
+            version = svc.get("version", "")
+
+            # Descarta listeners internos no identificados (containerd, etc.)
+            # Mantiene los unknown que sí aportan algo (product o version).
+            if name in ("unknown", "tcpwrapped") and not product and not version:
+                continue
+
             services.append({
                 "port": int(p.get("portid")),
                 "proto": p.get("protocol"),
-                "name": svc.get("name", "unknown"),
-                "product": svc.get("product", ""),
-                "version": svc.get("version", ""),
+                "name": name,
+                "product": product,
+                "version": version,
                 "extrainfo": svc.get("extrainfo", ""),
                 "scripts": {
                     s.get("id"): s.get("output", "")
