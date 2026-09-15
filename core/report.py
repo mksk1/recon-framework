@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 
+
 def build_report(outdir: Path, target, services, enum_results, exploits):
     lines = [f"# Reporte de reconocimiento — {target}\n"]
 
@@ -18,10 +19,23 @@ def build_report(outdir: Path, target, services, enum_results, exploits):
         lines.append("```\n")
 
     lines.append("\n## Exploits potenciales\n")
-    for term, hits in exploits.items():
-        lines.append(f"### {term}")
-        for h in hits:
-            lines.append(f"- `{h.get('Title')}` — {h.get('Path')}")
-        lines.append("")
+    if not exploits:
+        lines.append(
+            "_No se realizaron búsquedas: ningún servicio con producto identificado._\n"
+        )
+    else:
+        for term, hits in exploits.items():
+            if hits:
+                lines.append(f"### {term} — {len(hits)} resultado(s)\n")
+                for h in hits:
+                    title = h.get("Title", "?")
+                    path = h.get("Path", "?")
+                    lines.append(f"- `{title}` — {path}")
+                lines.append("")
+            else:
+                lines.append(
+                    f"- **{term}**: sin vulnerabilidades conocidas "
+                    f"en ExploitDB / searchsploit.\n"
+                )
 
     (outdir / "report.md").write_text("\n".join(lines))
