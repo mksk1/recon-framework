@@ -35,7 +35,7 @@ def build_report(outdir: Path, target, services, enum_results, exploits):
             else:
                 lines.append(
                     f"- **{term}**: sin vulnerabilidades conocidas "
-                    f"en ExploitDB / searchsploit.\n"
+                    f"en ExploitDB / searchsploit."
                 )
 
     (outdir / "report.md").write_text("\n".join(lines))
