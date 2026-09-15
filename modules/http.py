@@ -22,7 +22,7 @@ def enumerate(service, target, outdir):
         subprocess.run([
             "dirsearch", "-u", url,
             "-e", "php,html,js,txt,bak,zip",
-            "-w", "/usr/share/wordlists/dirb/common.txt",
+            "-w", "/home/mksk/wordlists/common.txt",
             "--format=json",
             "-o", str(out_json),
             "-q"
