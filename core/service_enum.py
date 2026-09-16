@@ -1,4 +1,4 @@
-from modules import ftp, http, generic
+from modules import ftp, http, smb, generic
 
 # Handlers por nombre de servicio (como antes)
 NAME_HANDLERS = {
@@ -11,13 +11,18 @@ NAME_HANDLERS = {
     "ssl/http": http.enumerate,
     "ipp":     http.enumerate,   # CUPS habla HTTP
     # "smtp":  smtp.enumerate,   # cuando lo tengas
+    "smb":     smb.enumerate,
+    "netbios-ssn": smb.enumerate,
+    "microsoft-ds": smb.enumerate,
 }
 
 # Handlers por puerto (por si nmap no identifica el nombre)
 PORT_HANDLERS = {
     21:   ftp.enumerate,
     80:   http.enumerate,
+    139:  smb.enumerate,
     443:  http.enumerate,
+    445:  smb.enumerate,
     631:  http.enumerate,  # CUPS
     8080: http.enumerate,
     8443: http.enumerate,
