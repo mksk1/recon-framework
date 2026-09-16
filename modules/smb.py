@@ -49,6 +49,10 @@ def _parse_shares(output):
                 parts = stripped.split(None, 2)
 
             name = parts[0]
+            # Ignora filas de relleno tipo "..." o vacías
+            if not name or set(name) <= {"."}:
+                continue
+
             permissions = parts[1] if len(parts) > 1 else ""
             comment = parts[2] if len(parts) > 2 else ""
 
