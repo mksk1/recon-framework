@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 import argparse, json, os, time
+import signal, subprocess, sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -8,6 +8,24 @@ from core.service_enum import dispatch_enum
 from core.exploit_search import search_exploits
 from core.report import build_report
 from utils.logger import log
+
+
+def _cleanup(sig, frame):
+    """Mata todos los procesos hijos al recibir SIGINT/SIGTERM."""
+    log.warning("[!] Interrupción recibida, matando subprocess hijos...")
+    try:
+        subprocess.run(
+            ["pkill", "-TERM", "-P", str(os.getpid())],
+            timeout=5, check=False,
+        )
+    except Exception:
+        pass
+    sys.exit(130)
+
+
+signal.signal(signal.SIGINT, _cleanup)
+signal.signal(signal.SIGTERM, _cleanup)
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -52,6 +70,7 @@ def main():
     # 5. Reporte
     build_report(outdir, args.target, services, enum_results, exploits)
     log.success(f"[+] Listo → {outdir}/report.md")
+
 
 if __name__ == "__main__":
     main()
