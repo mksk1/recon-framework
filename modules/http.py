@@ -66,6 +66,7 @@ def enumerate(service, target, outdir):
                 "-q"
             ],
             stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             timeout=600,
             check=False,
         )
