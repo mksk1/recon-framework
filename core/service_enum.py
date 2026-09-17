@@ -1,10 +1,12 @@
-from modules import ftp, http, smb, smtp, ssh, generic
+from modules import ftp, http, smb, smtp, ssh, dns, generic
 
 # Handlers por nombre de servicio (como antes)
 NAME_HANDLERS = {
     "ftp":     ftp.enumerate,
     "ssh":     ssh.enumerate,
     "ftps":    ftp.enumerate,
+    "dns":     dns.enumerate,
+    "domain":  dns.enumerate,
     "http":    http.enumerate,
     "https":   http.enumerate,
     "http-alt": http.enumerate,
@@ -23,6 +25,7 @@ PORT_HANDLERS = {
     21:   ftp.enumerate,
     22:   ssh.enumerate,
     25:   smtp.enumerate,
+    53:   dns.enumerate,
     80:   http.enumerate,
     139:  smb.enumerate,
     443:  http.enumerate,
