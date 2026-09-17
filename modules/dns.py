@@ -13,6 +13,22 @@ DEFAULT_WORDLISTS = [
     "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt",
 ]
 
+# Regex para detectar dominios (con TLD común en CTFs)
+DOMAIN_RE = re.compile(
+    r'\b([a-z0-9][a-z0-9-]{1,62}\.(?:local|htb|thm|lan|internal|corp|com|net|org|io))\b',
+    re.I
+)
+
+PRIORITY_SCRIPTS = [
+    "rdp-ntlm-info",
+    "smb-os-discovery",
+    "ldap-rootdse",
+    "ssl-cert",
+    "http-title",
+    "http-server-header",
+    "dns-nsid",
+]
+
 
 def _run(cmd, timeout=120):
     try:
@@ -34,34 +50,53 @@ def _find_wordlist():
     return None
 
 
-def _discover_domain(target, service):
+def _discover_domain(target, service, all_services=None):
     """Intenta descubrir el dominio del servidor DNS.
 
-    Solo usa reverse DNS y pistas de nmap. No lee /etc/hosts.
+    Orden:
+      1. Reverse DNS (PTR).
+      2. Scripts de nmap de alta prioridad en TODOS los servicios.
+      3. Cualquier script de nmap en TODOS los servicios.
+
+    Nota: filtra elementos no-dict en all_services (defensivo).
     """
     # 1. Reverse DNS
     try:
         fqdn = socket.gethostbyaddr(target)[0]
         parts = fqdn.split(".")
-        # Ignora "localhost" y nombres sin punto
         if len(parts) >= 2 and not fqdn.startswith("localhost"):
             if len(parts) == 2:
-                return fqdn
-            # Para "dc01.corp.local" devuelve "corp.local"
-            return ".".join(parts[-2:])
+                return fqdn.lower()
+            return ".".join(parts[-2:]).lower()
     except Exception:
         pass
 
-    # 2. Pistas en nmap_scripts
-    scripts = service.get("scripts", {}) or {}
-    for key, val in scripts.items():
-        if "domain" in key.lower() or "dns" in key.lower():
-            m = re.search(
-                r'([a-z0-9-]+\.(?:htb|local|thm|com|net|org|io|lan|internal))',
-                str(val), re.I
-            )
+    # Construye lista solo con dicts válidos
+    services_to_check = []
+    if all_services:
+        for s in all_services:
+            if isinstance(s, dict):
+                services_to_check.append(s)
+
+    if isinstance(service, dict) and service not in services_to_check:
+        services_to_check.append(service)
+
+    # 2. Scripts de alta prioridad
+    for svc in services_to_check:
+        scripts = svc.get("scripts", {}) or {}
+        for key in PRIORITY_SCRIPTS:
+            if key in scripts:
+                m = DOMAIN_RE.search(str(scripts[key]))
+                if m:
+                    return m.group(1).lower()
+
+    # 3. Cualquier script
+    for svc in services_to_check:
+        scripts = svc.get("scripts", {}) or {}
+        for key, val in scripts.items():
+            m = DOMAIN_RE.search(str(val))
             if m:
-                return m.group(1)
+                return m.group(1).lower()
 
     return None
 
@@ -133,7 +168,6 @@ def _brute_subdomains(domain, wordlist, threads=10, timeout=300):
 
 
 def _parse_dnsrecon(data):
-    """Extrae subdominios del JSON de dnsrecon."""
     subdomains = []
     for rec in data.get("records", []) or []:
         rtype = rec.get("type", "").upper()
@@ -149,7 +183,7 @@ def _parse_dnsrecon(data):
     return subdomains
 
 
-def enumerate(service, target, outdir, wordlist=None):
+def enumerate(service, target, outdir, wordlist=None, all_services=None):
     port = service["port"]
 
     result = {
@@ -172,8 +206,10 @@ def enumerate(service, target, outdir, wordlist=None):
     except Exception:
         pass
 
-    # --- 2. Descubrir dominio ---
-    result["domain"] = _discover_domain(target, service)
+    # --- 2. Descubrir dominio (con contexto global) ---
+    result["domain"] = _discover_domain(
+        target, service, all_services=all_services
+    )
     if not result["domain"]:
         log.info(f"[-] DNS sin dominio descubierto en {target}:{port}")
         return result

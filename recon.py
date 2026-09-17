@@ -12,7 +12,7 @@ from utils.logger import log
 
 def _cleanup(sig, frame):
     """Mata todos los procesos hijos al recibir SIGINT/SIGTERM."""
-    log.warning("[!] Interrupción recibida, matando subprocess hijos...")
+    log.warning("Interrupción recibida, matando subprocess hijos...")
     try:
         subprocess.run(
             ["pkill", "-TERM", "-P", str(os.getpid())],
@@ -53,7 +53,7 @@ def main():
     enum_results = {}
     with ThreadPoolExecutor(max_workers=args.threads) as ex:
         futures = {
-            ex.submit(dispatch_enum, svc, args.target, outdir): svc
+            ex.submit(dispatch_enum, svc, args.target, outdir, services): svc
             for svc in services
         }
         for fut in as_completed(futures):

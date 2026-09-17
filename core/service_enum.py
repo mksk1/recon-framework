@@ -1,57 +1,60 @@
 from modules import ftp, http, smb, smtp, ssh, dns, generic
 
-# Handlers por nombre de servicio (como antes)
+# Handlers por nombre de servicio
 NAME_HANDLERS = {
-    "ftp":     ftp.enumerate,
-    "ssh":     ssh.enumerate,
-    "ftps":    ftp.enumerate,
-    "dns":     dns.enumerate,
-    "domain":  dns.enumerate,
-    "http":    http.enumerate,
-    "https":   http.enumerate,
-    "http-alt": http.enumerate,
+    "ftp":        ftp.enumerate,
+    "ftps":       ftp.enumerate,
+    "http":       http.enumerate,
+    "https":      http.enumerate,
+    "http-alt":   http.enumerate,
     "http-proxy": http.enumerate,
-    "ssl/http": http.enumerate,
-    "ipp":     http.enumerate,   # CUPS habla HTTP
-    "smtp":  smtp.enumerate,
-    "smtps": smtp.enumerate,
-    "smb":     smb.enumerate,
+    "ssl/http":   http.enumerate,
+    "ipp":        http.enumerate,
+    "smb":        smb.enumerate,
     "netbios-ssn": smb.enumerate,
     "microsoft-ds": smb.enumerate,
+    "smtp":       smtp.enumerate,
+    "smtps":      smtp.enumerate,
+    "submission": smtp.enumerate,
+    "ssh":        ssh.enumerate,
+    "domain":     dns.enumerate,
+    "dns":        dns.enumerate,
 }
 
-# Handlers por puerto (por si nmap no identifica el nombre)
+# Handlers por puerto (fallback si nmap no identifica el nombre)
 PORT_HANDLERS = {
-    21:   ftp.enumerate,
-    22:   ssh.enumerate,
-    25:   smtp.enumerate,
-    53:   dns.enumerate,
-    80:   http.enumerate,
-    139:  smb.enumerate,
-    443:  http.enumerate,
-    445:  smb.enumerate,
-    465:  smtp.enumerate,
-    587:  smtp.enumerate,
-    631:  http.enumerate,  # CUPS
-    2222: ssh.enumerate,
-    8080: http.enumerate,
-    8443: http.enumerate,
+    21:    ftp.enumerate,
+    22:    ssh.enumerate,
+    25:    smtp.enumerate,
+    53:    dns.enumerate,
+    80:    http.enumerate,
+    139:   smb.enumerate,
+    443:   http.enumerate,
+    445:   smb.enumerate,
+    465:   smtp.enumerate,
+    587:   smtp.enumerate,
+    631:   http.enumerate,
+    2222:  ssh.enumerate,
+    8080:  http.enumerate,
+    8443:  http.enumerate,
 }
 
 
-def dispatch_enum(service, target, outdir):
+def dispatch_enum(service, target, outdir, all_services=None):
     name = service.get("name", "").lower()
     port = service.get("port")
 
-    # 1) por nombre de servicio
+    # 1) por nombre
     handler = NAME_HANDLERS.get(name)
-
-    # 2) si no, por puerto
+    # 2) por puerto
     if handler is None:
         handler = PORT_HANDLERS.get(port)
-
-    # 3) fallback genérico
+    # 3) fallback
     if handler is None:
         handler = generic.enumerate
+
+    # Handlers que necesitan contexto global (todos los servicios)
+    if handler == dns.enumerate:
+        return handler(service, target, outdir, all_services=all_services)
 
     return handler(service, target, outdir)
