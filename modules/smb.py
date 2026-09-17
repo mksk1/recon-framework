@@ -2,12 +2,12 @@ import subprocess
 import re
 from utils.logger import log
 
+
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 PROGRESS_RE = re.compile(r"\[[\\|/\-*]\] .*?\.\.\.\s*")
 
 
 def _clean_smbmap(out):
-    """Limpia el output de smbmap: quita ANSI, spinners y líneas vacías."""
     out = ANSI_RE.sub("", out)
     out = PROGRESS_RE.sub("", out)
     out = out.replace("\r", "\n")
@@ -16,40 +16,24 @@ def _clean_smbmap(out):
 
 
 def _parse_shares(output):
-    """Extrae la tabla de shares del output de smbmap a lista de dicts.
-
-    Formato esperado (separado por TABS):
-        \\tDisk\\tPermissions\\tComment
-        \\t----\\t-----------\\t-------
-        \\tprint$\\tNO ACCESS\\tPrinter Drivers
-        \\tpublic\\tREAD, WRITE\\t
-    """
     shares = []
     in_table = False
     for line in output.splitlines():
         stripped = line.strip()
-
-        # Cabecera de la tabla
         if "Disk" in stripped and "Permissions" in stripped:
             in_table = True
             continue
-        # Separador
         if in_table and stripped.startswith("----"):
             continue
-        # Filas
         if in_table and stripped:
-            # Corta al salir de la tabla
             if stripped.startswith("[") or stripped.startswith("+"):
                 break
 
-            # CLAVE: partir por TAB, no por whitespace genérico
             parts = [p.strip() for p in line.split("\t") if p.strip()]
             if len(parts) < 2:
-                # Fallback por si no hay tabs
                 parts = stripped.split(None, 2)
 
             name = parts[0]
-            # Ignora filas de relleno tipo "..." o vacías
             if not name or set(name) <= {"."}:
                 continue
 
@@ -65,7 +49,6 @@ def _parse_shares(output):
 
 
 def _run_smbmap(target, port, extra_args):
-    """Ejecuta smbmap con args extra y devuelve stdout limpio o None."""
     try:
         r = subprocess.run(
             ["smbmap", "-H", target, "-P", str(port),
@@ -83,30 +66,19 @@ def _run_smbmap(target, port, extra_args):
 
 
 def _session_info(output):
-    """Analiza el output de smbmap y devuelve info sobre la sesión.
-
-    Devuelve un dict con:
-      - status: "none" | "authenticated" | "denied"
-      - shares_with_access: lista de nombres de shares accesibles
-    """
     info = {"status": "none", "shares_with_access": []}
-
     if not output:
         return info
-
     if "Status: Authenticated" in output:
         info["status"] = "authenticated"
     elif "Status: Authentication error" in output or "denied" in output.lower():
         info["status"] = "denied"
         return info
-
-    # Buscar shares con acceso (no "NO ACCESS")
     shares = _parse_shares(output)
     for s in shares:
         perms = s.get("permissions", "").upper()
         if perms and "NO ACCESS" not in perms:
             info["shares_with_access"].append(s["name"])
-
     return info
 
 
@@ -125,15 +97,15 @@ def enumerate(service, target, outdir):
         "shares_anon": [],
         "session_anon": None,
         "session_guest": None,
+        "findings": [],
     }
 
-    # --- 1) Sesión nula real (-u '' -p '') ---
+    # --- Sesión nula ---
     result["smbmap_anon"] = _run_smbmap(target, port, ["-u", "", "-p", ""])
     if result["smbmap_anon"]:
         result["shares_anon"] = _parse_shares(result["smbmap_anon"])
         anon = _session_info(result["smbmap_anon"])
         result["session_anon"] = anon
-
         if anon["status"] == "authenticated" and anon["shares_with_access"]:
             log.success(
                 f"[+] SMB sesión NULA con acceso en {target}:{port} "
@@ -144,13 +116,12 @@ def enumerate(service, target, outdir):
         else:
             log.info(f"[-] SMB sesión nula rechazada en {target}:{port}")
 
-    # --- 2) Guest (sin credenciales) ---
+    # --- Guest ---
     result["smbmap"] = _run_smbmap(target, port, [])
     if result["smbmap"]:
         result["shares"] = _parse_shares(result["smbmap"])
         guest = _session_info(result["smbmap"])
         result["session_guest"] = guest
-
         if guest["status"] == "authenticated" and guest["shares_with_access"]:
             log.success(
                 f"[+] SMB sesión GUEST con acceso en {target}:{port} "
@@ -160,5 +131,23 @@ def enumerate(service, target, outdir):
             log.info(f"[-] SMB guest autenticado pero sin acceso útil en {target}:{port}")
         else:
             log.info(f"[-] SMB guest rechazado en {target}:{port}")
+
+    # --- Findings clasificados ---
+    for label, sess in (("sesión nula", result.get("session_anon")),
+                        ("guest", result.get("session_guest"))):
+        if not sess:
+            continue
+        if sess.get("status") == "authenticated" and sess.get("shares_with_access"):
+            result["findings"].append({
+                "severity": "critical",
+                "title": f"SMB acceso vía {label}",
+                "detail": "Shares accesibles: " +
+                          ", ".join(sess["shares_with_access"]),
+            })
+        elif sess.get("status") == "authenticated":
+            result["findings"].append({
+                "severity": "warning",
+                "title": f"SMB autenticado vía {label} pero sin acceso",
+            })
 
     return result

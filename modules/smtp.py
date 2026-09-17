@@ -2,11 +2,11 @@ import smtplib
 import socket
 from utils.logger import log
 
+
 DEFAULT_USERS = ["root", "admin", "postmaster", "webmaster", "info", "test", "user", "mail"]
 
 
 def _decode(x):
-    """Decodifica bytes a str si hace falta."""
     if isinstance(x, bytes):
         return x.decode("utf-8", errors="replace")
     return x
@@ -37,9 +37,10 @@ def enumerate(service, target, outdir):
         "starttls": False,
         "users_valid": [],
         "open_relay": None,
+        "findings": [],
     }
 
-    # --- Banner (socket crudo) ---
+    # --- Banner ---
     result["banner"] = _get_banner(target, port)
 
     # --- EHLO + features + STARTTLS ---
@@ -49,7 +50,6 @@ def enumerate(service, target, outdir):
             msg = _decode(msg)
             if code == 250:
                 features = [line.strip() for line in msg.splitlines() if line.strip()]
-                # La primera línea es el saludo, las demás las features
                 result["ehlo_features"] = features
                 result["starttls"] = any("STARTTLS" in f.upper() for f in features)
             else:
@@ -59,7 +59,7 @@ def enumerate(service, target, outdir):
         log.warning(f"[!] SMTP EHLO falló en {target}:{port}: {e}")
         return result
 
-    # --- Enumeración de usuarios con VRFY ---
+    # --- VRFY ---
     try:
         with smtplib.SMTP(target, port, timeout=10) as s:
             s.ehlo("recon.local")
@@ -69,15 +69,12 @@ def enumerate(service, target, outdir):
                     if code in (250, 251):
                         result["users_valid"].append(user)
                         log.success(f"[+] SMTP usuario válido: {user}@{target}")
-                    elif code == 252:
-                        # VRFY deshabilitado pero el usuario podría existir
-                        pass
                 except Exception:
                     continue
     except Exception as e:
         log.warning(f"[!] SMTP VRFY falló en {target}:{port}: {e}")
 
-    # --- Open relay check ---
+    # --- Open relay ---
     try:
         with smtplib.SMTP(target, port, timeout=10) as s:
             s.ehlo("recon.local")
@@ -94,5 +91,31 @@ def enumerate(service, target, outdir):
             s.docmd("RSET")
     except Exception as e:
         log.warning(f"[!] SMTP open relay check falló en {target}:{port}: {e}")
+
+    # --- Findings clasificados ---
+    if result.get("open_relay"):
+        result["findings"].append({
+            "severity": "critical",
+            "title": "SMTP open relay",
+            "detail": "Permite relay sin autenticación desde este host.",
+        })
+    if not result.get("starttls"):
+        result["findings"].append({
+            "severity": "warning",
+            "title": "SMTP sin STARTTLS",
+            "detail": "Las credenciales pueden viajar en claro.",
+        })
+    if result.get("users_valid"):
+        result["findings"].append({
+            "severity": "warning",
+            "title": f"{len(result['users_valid'])} usuarios SMTP enumerados",
+            "detail": "VRFY/EXPN expone: " +
+                      ", ".join(result["users_valid"][:5]),
+        })
+    if result.get("banner"):
+        result["findings"].append({
+            "severity": "info",
+            "title": f"SMTP banner: {result['banner'][:80]}",
+        })
 
     return result

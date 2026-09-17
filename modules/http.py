@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from utils.logger import log
 
+
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 WORDLISTS = [
@@ -36,6 +37,7 @@ def enumerate(service, target, outdir):
         "url": url,
         "whatweb": None,
         "dirsearch": None,
+        "findings": [],
     }
 
     # --- WhatWeb ---
@@ -52,6 +54,12 @@ def enumerate(service, target, outdir):
     wl = _find_wordlist()
     if wl is None:
         log.warning(f"[!] sin wordlist disponible, saltando dirsearch en {url}")
+        # findings mínimos aunque no haya dirsearch
+        if result.get("whatweb"):
+            result["findings"].append({
+                "severity": "info",
+                "title": f"HTTP fingerprint: {result['whatweb'][:80]}",
+            })
         return result
 
     out_json = outdir / f"dirsearch_{port}.json"
@@ -96,5 +104,36 @@ def enumerate(service, target, outdir):
             result["dirsearch"] = {"total": 0, "by_status": {}, "top": []}
     except Exception as e:
         log.warning(f"[!] dirsearch falló en {url}: {e}")
+
+    # --- Findings clasificados ---
+    ds = result.get("dirsearch") or {}
+    by_status = ds.get("by_status") or {}
+    total = ds.get("total", 0)
+
+    if total:
+        protected = by_status.get("401", 0) + by_status.get("403", 0)
+        if protected:
+            result["findings"].append({
+                "severity": "warning",
+                "title": f"{protected} rutas protegidas (401/403)",
+                "detail": "Posible panel de admin expuesto.",
+            })
+        result["findings"].append({
+            "severity": "info",
+            "title": f"{total} rutas encontradas por dirsearch",
+        })
+
+    # Detección de title "Error"
+    title = ""
+    for k, v in (result.get("nmap_scripts") or {}).items():
+        if k == "http-title":
+            title = v
+            break
+    if title.lower() == "error":
+        result["findings"].append({
+            "severity": "warning",
+            "title": "HTTP título 'Error'",
+            "detail": "Posible servicio de desarrollo o interno.",
+        })
 
     return result

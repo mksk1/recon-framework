@@ -3,7 +3,6 @@ import json
 from utils.logger import log
 
 
-# Máximo de hallazgos críticos a mostrar en consola antes de resumir
 MAX_LOG_FINDINGS = 3
 
 
@@ -77,6 +76,7 @@ def enumerate(service, target, outdir):
         "warnings": [],
         "recommendations": {},
         "cves": [],
+        "findings": [],
     }
 
     data = _run_ssh_audit(target, port)
@@ -89,7 +89,7 @@ def enumerate(service, target, outdir):
     result["software"] = banner.get("software")
     result["protocol"] = banner.get("protocol")
 
-    # --- Fingerprints (solo SHA256, evita duplicados MD5) ---
+    # --- Fingerprints (solo SHA256) ---
     result["fingerprints"] = [
         {
             "hostkey": fp.get("hostkey"),
@@ -126,5 +126,26 @@ def enumerate(service, target, outdir):
         log.info(f"[+] SSH {target}:{port} → sin críticos, {n_warn} warnings")
     else:
         log.success(f"[+] SSH {target}:{port} → configuración fuerte")
+
+    # --- Findings clasificados ---
+    if n_crit:
+        crit_algos = sorted({f["algorithm"] for f in result["critical_findings"]})
+        result["findings"].append({
+            "severity": "critical",
+            "title": f"{n_crit} algoritmos SSH débiles",
+            "detail": "Incluye: " + ", ".join(crit_algos[:5]) +
+                      ("..." if len(crit_algos) > 5 else ""),
+        })
+    if n_warn:
+        result["findings"].append({
+            "severity": "warning",
+            "title": f"{n_warn} algoritmos SSH con warnings",
+            "detail": "Revisar configuración de sshd.",
+        })
+    if result.get("banner"):
+        result["findings"].append({
+            "severity": "info",
+            "title": f"SSH: {result.get('software') or result['banner']}",
+        })
 
     return result
