@@ -1,4 +1,4 @@
-from modules import ftp, http, smb, smtp, ssh, dns, rpc, generic
+from modules import ftp, http, smb, smtp, ssh, dns, rpc, ldap, generic
 
 # Handlers por nombre de servicio
 NAME_HANDLERS = {
@@ -21,6 +21,10 @@ NAME_HANDLERS = {
     "ssh":        ssh.enumerate,
     "domain":     dns.enumerate,
     "dns":        dns.enumerate,
+    "ldap":       ldap.enumerate,
+    "ldaps":      ldap.enumerate,
+    "ldapssl":    ldap.enumerate,
+    "globalcatLDAP": ldap.enumerate,
 }
 
 # Handlers por puerto (fallback si nmap no identifica el nombre)
@@ -32,12 +36,16 @@ PORT_HANDLERS = {
     80:    http.enumerate,
     111:   rpc.enumerate,
     139:   smb.enumerate,
+    389:   ldap.enumerate,  
     443:   http.enumerate,
     445:   smb.enumerate,
     465:   smtp.enumerate,
     587:   smtp.enumerate,
     631:   http.enumerate,
+    636:   ldap.enumerate,
     2222:  ssh.enumerate,
+    3268:  ldap.enumerate,
+    3269:  ldap.enumerate,
     8080:  http.enumerate,
     8443:  http.enumerate,
 }
