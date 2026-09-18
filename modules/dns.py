@@ -169,17 +169,34 @@ def _brute_subdomains(domain, wordlist, threads=10, timeout=300):
 
 def _parse_dnsrecon(data):
     subdomains = []
-    for rec in data.get("records", []) or []:
-        rtype = rec.get("type", "").upper()
-        if rtype in ("A", "CNAME", "AAAA"):
+    if not isinstance(data, dict):
+        log.warning(f"[!] dnsrecon data no es dict: {type(data).__name__}")
+        return subdomains
+
+    records = data.get("records", [])
+    if not isinstance(records, list):
+        log.warning(f"[!] dnsrecon records no es list: {type(records).__name__}")
+        return subdomains
+
+    for rec in records:
+        # Soporta dicts Y listas/tuplas
+        if isinstance(rec, dict):
+            rtype = rec.get("type", "").upper()
             name = rec.get("name", "")
             address = rec.get("address") or rec.get("target") or ""
-            if name:
-                subdomains.append({
-                    "name": name,
-                    "address": address,
-                    "type": rtype,
-                })
+        elif isinstance(rec, (list, tuple)) and len(rec) >= 3:
+            rtype = str(rec[0]).upper()
+            name = str(rec[1])
+            address = str(rec[2])
+        else:
+            continue
+
+        if rtype in ("A", "CNAME", "AAAA") and name:
+            subdomains.append({
+                "name": name,
+                "address": address,
+                "type": rtype,
+            })
     return subdomains
 
 
