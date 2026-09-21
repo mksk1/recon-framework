@@ -1,4 +1,4 @@
-from modules import ftp, http, smb, smtp, ssh, dns, rpc, ldap, mysql, generic
+from modules import ftp, http, smb, smtp, ssh, dns, rpc, ldap, mysql, redis, generic
 
 # Handlers por nombre de servicio
 NAME_HANDLERS = {
@@ -7,6 +7,7 @@ NAME_HANDLERS = {
     "http":       http.enumerate,
     "rpcbind":    rpc.enumerate,
     "sunrpc":     rpc.enumerate,
+    "redis":      redis.enumerate,
     "https":      http.enumerate,
     "http-alt":   http.enumerate,
     "http-proxy": http.enumerate,
@@ -48,6 +49,7 @@ PORT_HANDLERS = {
     3268:  ldap.enumerate,
     3269:  ldap.enumerate,
     3306:  mysql.enumerate,
+    6379:  redis.enumerate,
     8080:  http.enumerate,
     8443:  http.enumerate,
 }
