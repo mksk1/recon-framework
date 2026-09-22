@@ -1,37 +1,31 @@
-import subprocess, xml.etree.ElementTree as ET
+import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from utils.logger import log
 
 
-# Scripts NSE específicos por puerto/servicio
-# Se añaden al nmap -sVC si el puerto está en la lista
-PORT_SCRIPTS = {
-    21:   "ftp-anon,ftp-bounce,ftp-syst,ftp-vsftpd-backdoor",
-    22:   "ssh-auth-methods,ssh-hostkey,ssh2-enum-algos",
-    25:   "smtp-commands,smtp-enum-users,smtp-open-relay,smtp-vuln-cve2010-4344",
-    53:   "dns-zone-transfer,dns-nsid,dns-service-discovery",
-    80:   "http-title,http-headers,http-methods,http-robots.txt,http-enum",
-    110:  "pop3-capabilities,pop3-ntlm-info",
+# Scripts NSE específicos por puerto TCP
+NSE_SCRIPTS_BY_PORT = {
+    53:   "dns-nsid",
+    88:   "krb5-enum-users",
     111:  "rpcinfo",
-    139:  "smb-os-discovery,smb-enum-shares,smb-enum-users,smb-security-mode,smb2-security-mode",
-    143:  "imap-capabilities,imap-ntlm-info",
-    389:  "ldap-rootdse,ldap-search,ldap-novell-getpass",
-    443:  "http-title,http-headers,http-methods,ssl-cert,ssl-enum-ciphers",
-    445:  "smb-os-discovery,smb-enum-shares,smb-enum-users,smb-security-mode,smb2-security-mode,smb2-capabilities",
-    631:  "http-title,http-headers,http-methods",
-    1433: "ms-sql-info,ms-sql-config,ms-sql-empty-password,ms-sql-dac,ms-sql-tables",
-    1521: "oracle-tns-version,oracle-sid-brute",
+    139:  "smb-os-discovery,smb-enum-shares,smb-enum-users,smb-security-mode",
+    389:  "ldap-rootdse,ldap-search",
+    445:  "smb-os-discovery,smb-enum-shares,smb-enum-users,smb-security-mode",
+    636:  "ssl-cert",
+    1433: "ms-sql-info,ms-sql-empty-password",
+    2049: "nfs-showmount,nfs-ls",
     3306: "mysql-info,mysql-databases,mysql-users,mysql-variables,mysql-empty-password",
-    3389: "rdp-enum-encryption,rdp-ntlm-info,rdp-vuln-ms12-020",
+    3389: "rdp-enum-encryption,rdp-ntlm-info",
     5432: "pgsql-brute",
-    5900: "vnc-info,vnc-brute,realvnc-auth-bypass",
-    5985: "http-title,http-headers",
-    5986: "http-title,http-headers,ssl-cert",
+    5900: "vnc-info",
     6379: "redis-info,redis-brute",
-    8080: "http-title,http-headers,http-methods,http-enum",
-    8443: "http-title,http-headers,ssl-cert,ssl-enum-ciphers",
+    8080: "http-title,http-headers",
     27017: "mongodb-info,mongodb-databases",
 }
+
+# Puertos UDP comunes a escanear
+UDP_PORTS = "53,67,69,111,123,137,138,161,162,500,514,520,623,1900,4500,5353"
 
 
 class NmapScanner:
@@ -39,8 +33,10 @@ class NmapScanner:
         self.target = target
         self.outdir = outdir
 
-    def _run(self, args, xmlfile):
+    def _run(self, args, xmlfile, sudo=False):
         cmd = ["nmap", *args, "-oX", str(xmlfile), self.target]
+        if sudo:
+            cmd = ["sudo"] + cmd
         log.info(f"[*] {' '.join(cmd)}")
         subprocess.run(cmd, check=True, capture_output=True)
 
@@ -52,24 +48,39 @@ class NmapScanner:
         self._run(args, xml)
         return self._parse_ports(xml)
 
+    def discover_udp(self):
+        """Escaneo UDP de puertos comunes (necesita sudo)."""
+        xml = self.outdir / "nmap_udp.xml"
+        try:
+            self._run(
+                ["-sU", "-p", UDP_PORTS, "-Pn", "-T4", "--max-retries", "1"],
+                xml,
+                sudo=True,
+            )
+            return self._parse_ports(xml)
+        except subprocess.CalledProcessError as e:
+            log.warning(f"[!] escaneo UDP falló (¿sudo?): {e}")
+            return []
+        except Exception as e:
+            log.warning(f"[!] escaneo UDP falló: {e}")
+            return []
+
     def detect_services(self, ports):
         xml = self.outdir / "nmap_services.xml"
-        pstr = ",".join(str(p) for p in ports)
 
-        # Recoge scripts específicos para los puertos detectados
-        scripts_to_run = []
+        # Construye lista de scripts según los puertos detectados
+        scripts = set()
         for p in ports:
-            if p in PORT_SCRIPTS:
-                scripts_to_run.append(PORT_SCRIPTS[p])
+            if p in NSE_SCRIPTS_BY_PORT:
+                for s in NSE_SCRIPTS_BY_PORT[p].split(","):
+                    scripts.add(s.strip())
 
+        pstr = ",".join(str(p) for p in ports)
         args = ["-sVC", "-p", pstr, "-Pn"]
-        if scripts_to_run:
-            # Une todos los scripts con coma, sin duplicados
-            unique_scripts = ",".join(sorted(set(
-                s for group in scripts_to_run for s in group.split(",")
-            )))
-            args.extend(["--script", unique_scripts])
-            log.info(f"[*] scripts NSE: {unique_scripts}")
+        if scripts:
+            script_str = ",".join(sorted(scripts))
+            log.info(f"[*] scripts NSE: {script_str}")
+            args.extend(["--script", script_str])
 
         self._run(args, xml)
         return self._parse_services(xml)
@@ -92,9 +103,11 @@ class NmapScanner:
             state = p.find("state")
             if state is None or state.get("state") != "open":
                 continue
+
             svc = p.find("service")
             if svc is None:
                 continue
+
             name = svc.get("name", "unknown")
             product = svc.get("product", "")
             version = svc.get("version", "")
