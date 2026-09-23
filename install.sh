@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # install.sh — Instalador de recon-framework
-# Uso: ./install.sh [--yes] [--skip-wordlists]
+# Uso: ./install.sh [--yes] [--skip-wordlists] [--no-alias]
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ASSUME_YES=0
 SKIP_WORDLISTS=0
+SKIP_ALIAS=0
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -23,6 +24,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --yes|-y)          ASSUME_YES=1 ;;
         --skip-wordlists)  SKIP_WORDLISTS=1 ;;
+        --no-alias)        SKIP_ALIAS=1 ;;
         -h|--help)
             cat <<EOF
 Uso: $0 [opciones]
@@ -30,6 +32,7 @@ Uso: $0 [opciones]
 Opciones:
   -y, --yes              No preguntar, instalar todo
   --skip-wordlists       No descargar wordlists extra
+  --no-alias             No crear el alias 'enumini'
   -h, --help             Mostrar esta ayuda
 EOF
             exit 0
@@ -67,46 +70,12 @@ log_ok "Detectado: $PRETTY_NAME"
 log_info "Actualizando repositorios..."
 sudo apt update -qq
 
-# --- Paquetes del sistema (TODOS los handlers actuales) ---
+# --- Paquetes del sistema ---
 SYSTEM_PKGS=(
-    # Core
-    nmap
-    git
-    curl
-    wget
-    python3
-    python3-pip
-    python3-venv
-
-    # DNS
-    dnsutils
-
-    # FTP
-    ftp
-
-    # HTTP
-    whatweb
-    dirsearch
-
-    # SMB
-    smbmap
-
-    # LDAP
-    ldap-utils
-
-    # Redis
-    redis-tools
-
-    # MySQL
-    default-mysql-client
-
-    # SNMP
-    snmp
-
-    # Utilidades varias
-    rsync
-    nfs-common
-    snmpd
+    nmap git curl wget python3 python3-pip python3-venv
+    dnsutils ftp whatweb dirsearch smbmap ldap-utils
+    redis-tools default-mysql-client snmp snmpd
+    rsync nfs-common
 )
 
 log_info "Instalando paquetes del sistema..."
@@ -167,13 +136,12 @@ else
     log_ok "dnsrecon ya instalado"
 fi
 
-# --- mongosh (MongoDB Shell) ---
+# --- mongosh ---
 if ! command -v mongosh >/dev/null; then
     log_info "Instalando mongosh (MongoDB Shell)..."
     if apt-cache show mongodb-mongosh >/dev/null 2>&1; then
         sudo apt install -y mongodb-mongosh
     else
-        # Añade repo oficial de MongoDB
         log_info "Añadiendo repo oficial de MongoDB..."
         curl -fsSL https://pgp.mongodb.com/server-8.0.asc | \
             sudo gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
@@ -204,6 +172,41 @@ if [[ "$SKIP_WORDLISTS" -eq 0 ]]; then
     fi
 
     log_ok "Wordlists en $WL_DIR"
+fi
+
+# --- Alias 'enumini' ---
+if [[ "$SKIP_ALIAS" -eq 0 ]]; then
+    install_alias() {
+        local recon_path="$SCRIPT_DIR/recon.py"
+        local alias_line="alias enumini='python3 $recon_path'"
+
+        local shell_rc=""
+        case "$SHELL" in
+            */bash) shell_rc="$HOME/.bashrc" ;;
+            */zsh)  shell_rc="$HOME/.zshrc" ;;
+            *)
+                log_warn "Shell no detectado ($SHELL). Añade el alias a mano:"
+                log_warn "  $alias_line"
+                return
+                ;;
+        esac
+
+        if grep -q "alias enumini=" "$shell_rc" 2>/dev/null; then
+            sed -i "s|^alias enumini=.*|$alias_line|" "$shell_rc"
+            log_ok "Alias 'enumini' actualizado en $shell_rc"
+        else
+            echo "" >> "$shell_rc"
+            echo "# recon-framework alias" >> "$shell_rc"
+            echo "$alias_line" >> "$shell_rc"
+            log_ok "Alias 'enumini' añadido a $shell_rc"
+        fi
+
+        log_info "Para usarlo ahora: source $shell_rc"
+        log_info "O abre una terminal nueva y ejecuta: enumini <target>"
+    }
+    install_alias
+else
+    log_info "Alias 'enumini' omitido (--no-alias)"
 fi
 
 # --- Verificación final ---
@@ -245,4 +248,5 @@ else
 fi
 
 echo
-log_info "Prueba con: python3 recon.py 127.0.0.1"
+log_info "Prueba con: enumini 127.0.0.1"
+log_info "O sin alias: python3 $SCRIPT_DIR/recon.py 127.0.0.1"
