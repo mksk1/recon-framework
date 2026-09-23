@@ -4,13 +4,10 @@
 
 set -euo pipefail
 
-# --- Configuración ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ASSUME_YES=0
 SKIP_WORDLISTS=0
-PYTHON_MIN="3.10"
 
-# Colores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -22,15 +19,6 @@ log_ok()    { echo -e "${GREEN}[+]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 log_err()   { echo -e "${RED}[-]${NC} $*" >&2; }
 
-confirm() {
-    if [[ "$ASSUME_YES" -eq 1 ]]; then
-        return 0
-    fi
-    read -rp "$1 [s/N] " reply
-    [[ "$reply" =~ ^[sSyY]$ ]]
-}
-
-# --- Parseo de argumentos ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --yes|-y)          ASSUME_YES=1 ;;
@@ -54,7 +42,6 @@ EOF
     shift
 done
 
-# --- Comprobaciones iniciales ---
 if [[ "$EUID" -eq 0 ]]; then
     log_warn "Estás ejecutando como root. Se recomienda usuario normal con sudo."
 fi
@@ -65,7 +52,7 @@ if ! command -v sudo >/dev/null && [[ "$EUID" -ne 0 ]]; then
 fi
 
 if [[ ! -f /etc/os-release ]]; then
-    log_err "No puedo detectar el SO (/etc/os-release no existe)."
+    log_err "No puedo detectar el SO."
     exit 1
 fi
 
@@ -80,20 +67,46 @@ log_ok "Detectado: $PRETTY_NAME"
 log_info "Actualizando repositorios..."
 sudo apt update -qq
 
-# --- Paquetes del sistema ---
+# --- Paquetes del sistema (TODOS los handlers actuales) ---
 SYSTEM_PKGS=(
+    # Core
     nmap
-    dnsutils
-    whatweb
-    smbmap
-    rsync
-    nfs-common
-    ldap-utils
-    snmp
-    python3-pip
-    python3-venv
     git
     curl
+    wget
+    python3
+    python3-pip
+    python3-venv
+
+    # DNS
+    dnsutils
+
+    # FTP
+    ftp
+
+    # HTTP
+    whatweb
+    dirsearch
+
+    # SMB
+    smbmap
+
+    # LDAP
+    ldap-utils
+
+    # Redis
+    redis-tools
+
+    # MySQL
+    default-mysql-client
+
+    # SNMP
+    snmp
+
+    # Utilidades varias
+    rsync
+    nfs-common
+    snmpd
 )
 
 log_info "Instalando paquetes del sistema..."
@@ -105,7 +118,7 @@ if ! command -v searchsploit >/dev/null; then
     if apt-cache show exploitdb >/dev/null 2>&1; then
         sudo apt install -y exploitdb
     else
-        log_warn "exploitdb no está en apt. Instalando desde GitHub..."
+        log_warn "exploitdb no está en apt. Instalando desde GitLab..."
         if [[ ! -d /opt/exploitdb ]]; then
             sudo git clone https://gitlab.com/exploit-database/exploitdb.git /opt/exploitdb
         fi
@@ -130,16 +143,14 @@ else
     log_ok "dirsearch ya instalado"
 fi
 
-# --- ssh-audit y otras de pip ---
-log_info "Instalando dependencias Python..."
-if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
-    pip3 install --user --upgrade -r "$SCRIPT_DIR/requirements.txt" || {
-        log_warn "pip3 --user falló. Probando con pipx..."
-        pipx install ssh-audit 2>/dev/null || true
-    }
+# --- ssh-audit ---
+if ! command -v ssh-audit >/dev/null; then
+    log_info "Instalando ssh-audit..."
+    pip3 install --user ssh-audit 2>/dev/null || \
+        pipx install ssh-audit 2>/dev/null || \
+        log_warn "No pude instalar ssh-audit. Prueba manualmente: pipx install ssh-audit"
 else
-    log_warn "No se encontró requirements.txt. Instalando ssh-audit a mano..."
-    pip3 install --user ssh-audit 2>/dev/null || true
+    log_ok "ssh-audit ya instalado"
 fi
 
 # --- dnsrecon ---
@@ -148,10 +159,31 @@ if ! command -v dnsrecon >/dev/null; then
     if apt-cache show dnsrecon >/dev/null 2>&1; then
         sudo apt install -y dnsrecon
     else
-        pip3 install --user dnsrecon || pipx install dnsrecon
+        pip3 install --user dnsrecon 2>/dev/null || \
+            pipx install dnsrecon 2>/dev/null || \
+            log_warn "No pude instalar dnsrecon."
     fi
 else
     log_ok "dnsrecon ya instalado"
+fi
+
+# --- mongosh (MongoDB Shell) ---
+if ! command -v mongosh >/dev/null; then
+    log_info "Instalando mongosh (MongoDB Shell)..."
+    if apt-cache show mongodb-mongosh >/dev/null 2>&1; then
+        sudo apt install -y mongodb-mongosh
+    else
+        # Añade repo oficial de MongoDB
+        log_info "Añadiendo repo oficial de MongoDB..."
+        curl -fsSL https://pgp.mongodb.com/server-8.0.asc | \
+            sudo gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | \
+            sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
+        sudo apt update -qq
+        sudo apt install -y mongodb-mongosh
+    fi
+else
+    log_ok "mongosh ya instalado"
 fi
 
 # --- Wordlists ---
@@ -159,14 +191,12 @@ if [[ "$SKIP_WORDLISTS" -eq 0 ]]; then
     WL_DIR="$HOME/wordlists"
     mkdir -p "$WL_DIR"
 
-    # dirb common
     if [[ ! -f "$WL_DIR/common.txt" ]]; then
         log_info "Descargando wordlist 'common.txt'..."
         curl -sSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt" \
              -o "$WL_DIR/common.txt" || log_warn "Fallo al descargar common.txt"
     fi
 
-    # subdominios
     if [[ ! -f "$WL_DIR/subdomains-top1million-5000.txt" ]]; then
         log_info "Descargando wordlist de subdominios..."
         curl -sSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt" \
@@ -178,12 +208,30 @@ fi
 
 # --- Verificación final ---
 log_info "Verificando instalación..."
+
+declare -A TOOLS=(
+    ["nmap"]="escaneo de puertos"
+    ["searchsploit"]="búsqueda de exploits"
+    ["dirsearch"]="fuzzing web"
+    ["whatweb"]="fingerprinting web"
+    ["smbmap"]="enumeración SMB"
+    ["ldapsearch"]="enumeración LDAP"
+    ["redis-cli"]="cliente Redis"
+    ["mysql"]="cliente MySQL"
+    ["mongosh"]="cliente MongoDB"
+    ["snmpwalk"]="cliente SNMP"
+    ["ssh-audit"]="auditoría SSH"
+    ["dnsrecon"]="enumeración DNS"
+    ["dig"]="consultas DNS"
+    ["rsync"]="sincronización de ficheros"
+)
+
 MISSING=()
-for cmd in nmap searchsploit dirsearch whatweb smbmap ssh-audit dnsrecon dig; do
+for cmd in "${!TOOLS[@]}"; do
     if command -v "$cmd" >/dev/null; then
-        log_ok "$cmd → $(command -v "$cmd")"
+        log_ok "$cmd → ${TOOLS[$cmd]}"
     else
-        log_warn "Falta: $cmd"
+        log_warn "Falta: $cmd (${TOOLS[$cmd]})"
         MISSING+=("$cmd")
     fi
 done
@@ -196,4 +244,5 @@ else
     log_warn "Instálalas manualmente o revisa la salida anterior."
 fi
 
+echo
 log_info "Prueba con: python3 recon.py 127.0.0.1"
