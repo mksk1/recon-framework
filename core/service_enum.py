@@ -1,4 +1,5 @@
-from modules import ftp, http, smb, smtp, ssh, dns, rpc, ldap, mysql, redis, mongo, snmp, generic
+from modules import (ftp, http, smb, smtp, ssh, dns, rpc, ldap,
+                     mysql, redis, mongo, snmp, kerberos, generic)
 
 # Handlers por nombre de servicio
 NAME_HANDLERS = {
@@ -6,6 +7,9 @@ NAME_HANDLERS = {
     "ftps":       ftp.enumerate,
     "http":       http.enumerate,
     "rpcbind":    rpc.enumerate,
+    "kerberos-sec": kerberos.enumerate,
+    "kerberos":     kerberos.enumerate,
+    "kpasswd5":     kerberos.enumerate,
     "snmp":       snmp.enumerate,
     "sunrpc":     rpc.enumerate,
     "redis":      redis.enumerate,
@@ -40,13 +44,15 @@ PORT_HANDLERS = {
     25:    smtp.enumerate,
     53:    dns.enumerate,
     80:    http.enumerate,
+    88:    kerberos.enumerate,
     111:   rpc.enumerate,
     139:   smb.enumerate,
     161:   snmp.enumerate,
     162:   snmp.enumerate,
-    389:   ldap.enumerate,  
+    389:   ldap.enumerate,
     443:   http.enumerate,
     445:   smb.enumerate,
+    464:   kerberos.enumerate,
     465:   smtp.enumerate,
     587:   smtp.enumerate,
     631:   http.enumerate,
@@ -76,7 +82,7 @@ def dispatch_enum(service, target, outdir, all_services=None):
         handler = generic.enumerate
 
     # Handlers que necesitan contexto global (todos los servicios)
-    if handler == dns.enumerate:
+    if handler in (dns.enumerate, kerberos.enumerate):
         return handler(service, target, outdir, all_services=all_services)
 
     return handler(service, target, outdir)
