@@ -32,28 +32,37 @@ def _run(cmd, timeout=60):
     return None
 
 
+def _clean_value(val):
+    """Limpia comillas y espacios de un valor SNMP."""
+    if val is None:
+        return None
+    v = val.strip()
+    if v.startswith('"') and v.endswith('"'):
+        v = v[1:-1]
+    if v.startswith("'") and v.endswith("'"):
+        v = v[1:-1]
+    return v.strip()
+
+
 def _snmpwalk(target, community, oid, timeout=30):
-    """Ejecuta snmpwalk contra un OID."""
     cmd = ["snmpwalk", "-v2c", "-c", community, "-t", "5", target, oid]
     return _run(cmd, timeout=timeout)
 
 
 def _snmpget(target, community, oid, timeout=10):
-    """Ejecuta snmpget para un OID concreto."""
     cmd = ["snmpget", "-v2c", "-c", community, "-t", "5", "-Ovq", target, oid]
     return _run(cmd, timeout=timeout)
 
 
 def _try_community(target, community):
-    """Prueba si una community responde."""
     out = _snmpget(target, community, "1.3.6.1.2.1.1.1.0")
     if out and "No Such" not in out and "Timeout" not in out and out.strip():
-        return out.strip()
+        return _clean_value(out)
     return None
 
 
 def _parse_system(target, community):
-    """Extrae info del sistema (sysDescr, sysName, sysContact, sysLocation, uptime)."""
+    """Extrae info del sistema."""
     info = {}
     oids = {
         "sysDescr":    "1.3.6.1.2.1.1.1.0",
@@ -66,26 +75,25 @@ def _parse_system(target, community):
     for key, oid in oids.items():
         val = _snmpget(target, community, oid)
         if val:
-            info[key] = val
+            info[key] = _clean_value(val)
     return info
 
 
 def _parse_interfaces(target, community):
-    """Extrae interfaces de red (descripción y MAC)."""
+    """Extrae interfaces de red."""
     interfaces = []
     descrs = _snmpwalk(target, community, "1.3.6.1.2.1.2.2.1.2")
     macs = _snmpwalk(target, community, "1.3.6.1.2.1.2.2.1.6")
     if not descrs:
         return interfaces
 
-    # Parseo de "iso.3.6.1.2.1.2.2.1.2.1 = STRING: lo"
     mac_map = {}
     if macs:
         for line in macs.splitlines():
             m = re.search(r'\.(\d+)\s*=\s*(?:Hex-STRING|STRING):\s*(.*)$', line)
             if m:
                 idx = m.group(1)
-                val = m.group(2).strip().strip('"')
+                val = _clean_value(m.group(2))
                 mac_map[idx] = val
 
     for line in descrs.splitlines():
@@ -93,7 +101,7 @@ def _parse_interfaces(target, community):
         if not m:
             continue
         idx = m.group(1)
-        name = m.group(2).strip().strip('"')
+        name = _clean_value(m.group(2))
         interfaces.append({
             "index": int(idx),
             "name": name,
@@ -103,7 +111,6 @@ def _parse_interfaces(target, community):
 
 
 def _parse_processes(target, community, limit=20):
-    """Extrae procesos en ejecución."""
     out = _snmpwalk(target, community, "1.3.6.1.2.1.25.4.2.1.2", timeout=45)
     if not out:
         return []
@@ -111,8 +118,7 @@ def _parse_processes(target, community, limit=20):
     for line in out.splitlines():
         m = re.search(r'=\s*STRING:\s*"?(.*?)"?\s*$', line)
         if m and m.group(1):
-            procs.append(m.group(1).strip().strip('"'))
-    # Filtra procesos del kernel (kworker, kthreadd, rcu_...)
+            procs.append(_clean_value(m.group(1)))
     user_procs = [p for p in procs if not p.startswith(("kworker", "kthreadd",
                                                          "rcu_", "ksoftirqd",
                                                          "migration/", "idle_inject",
@@ -122,7 +128,6 @@ def _parse_processes(target, community, limit=20):
 
 
 def _parse_software(target, community, limit=20):
-    """Extrae software instalado (hrSWInstalledName)."""
     out = _snmpwalk(target, community, "1.3.6.1.2.1.25.6.3.1.2", timeout=45)
     if not out:
         return []
@@ -130,7 +135,7 @@ def _parse_software(target, community, limit=20):
     for line in out.splitlines():
         m = re.search(r'=\s*STRING:\s*"?(.*?)"?\s*$', line)
         if m and m.group(1):
-            sw.append(m.group(1).strip().strip('"'))
+            sw.append(_clean_value(m.group(1)))
     return sw[:limit]
 
 
@@ -151,7 +156,7 @@ def enumerate(service, target, outdir):
         "findings": [],
     }
 
-    # --- 1. Buscar community válida ---
+    # 1. Buscar community válida
     for comm in COMMON_COMMUNITIES:
         sysdescr = _try_community(target, comm)
         if sysdescr:
@@ -169,19 +174,19 @@ def enumerate(service, target, outdir):
 
     comm = result["community"]
 
-    # --- 2. System info ---
+    # 2. System info
     result["system"] = _parse_system(target, comm)
 
-    # --- 3. Interfaces ---
+    # 3. Interfaces
     result["interfaces"] = _parse_interfaces(target, comm)
 
-    # --- 4. Procesos ---
+    # 4. Procesos
     result["processes"] = _parse_processes(target, comm)
 
-    # --- 5. Software instalado ---
+    # 5. Software
     result["software"] = _parse_software(target, comm)
 
-    # --- 6. Findings ---
+    # 6. Findings
     result["findings"].append({
         "severity": "critical" if comm == "public" else "warning",
         "title": f"SNMP community '{comm}' válida",
