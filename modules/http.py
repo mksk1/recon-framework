@@ -8,6 +8,39 @@ from utils.logger import log
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
+def _dedup_protected(items):
+    """Elimina rutas 401/403 duplicadas por prefijo común.
+
+    Ejemplo: si hay /admin, /adminphp, /admintxt... todas son la misma
+    ruta real. Se queda solo con la primera de cada prefijo.
+    """
+    seen_prefixes = set()
+    result = []
+
+    for it in items:
+        status = it.get("status")
+        # Solo deduplicamos 401 y 403
+        if status in (401, 403):
+            url = it.get("url", "")
+            # Extrae el path (sin http://host:port)
+            path = url.split("/", 3)[-1] if "/" in url else url
+            # Coge el primer "segmento" del path
+            segment = path.split("/")[0] if path else ""
+            # Extrae el prefijo: antes de -, ., _ o dígitos
+            prefix = re.split(r"[-._\d]", segment, maxsplit=1)[0].lower()
+
+            if not prefix:
+                prefix = segment.lower()
+
+            if prefix in seen_prefixes:
+                continue
+            seen_prefixes.add(prefix)
+
+        result.append(it)
+
+    return result
+
+
 def enumerate(service, target, outdir):
     port = service["port"]
     name = service["name"].lower()
@@ -57,16 +90,18 @@ def enumerate(service, target, outdir):
             data = json.loads(out_json.read_text())
             items = data.get("results", [])
 
-            # Filtra los soft-404 (302 que redirigen a "/")
+            # 1. Filtra soft-404 (302 que redirigen a "/")
             filtered = []
             for it in items:
                 status = it.get("status")
                 redirect = it.get("redirect", "")
 
-                # Ignora 302 que redirigen a la raíz (soft-404)
                 if status == 302 and redirect in ("/", ""):
                     continue
                 filtered.append(it)
+
+            # 2. Dedup rutas protegidas 401/403 por prefijo
+            filtered = _dedup_protected(filtered)
 
             by_status = {}
             for it in filtered:

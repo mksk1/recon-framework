@@ -111,10 +111,14 @@ def main():
     services = scanner.detect_services(ports)
 
     # 2b. Añadir servicios UDP sintéticos
+        # 2b. Añadir servicios UDP sintéticos
     if udp_ports:
         added = _add_synthetic_udp_services(services, udp_ports)
         for up, name in added:
             log.info(f"[+] Puerto UDP {up} → {name} (sintético)")
+
+    # 2c. Ordenar servicios por puerto
+    services.sort(key=lambda s: s["port"])
 
     (outdir / "services.json").write_text(json.dumps(services, indent=2))
 
