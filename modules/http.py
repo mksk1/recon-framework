@@ -7,20 +7,6 @@ from utils.logger import log
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
-WORDLISTS = [
-    "/home/mksk/wordlists/common.txt",
-    "/usr/share/wordlists/dirb/common.txt",
-    "/usr/share/dirsearch/db/dicc.txt",
-    "/usr/share/seclists/Discovery/Web-Content/common.txt",
-]
-
-
-def _find_wordlist():
-    for w in WORDLISTS:
-        if Path(w).exists():
-            return w
-    return None
-
 
 def enumerate(service, target, outdir):
     port = service["port"]
@@ -50,28 +36,16 @@ def enumerate(service, target, outdir):
     except Exception as e:
         log.warning(f"[!] whatweb falló en {url}: {e}")
 
-    # --- Dirsearch ---
-    wl = _find_wordlist()
-    if wl is None:
-        log.warning(f"[!] sin wordlist disponible, saltando dirsearch en {url}")
-        # findings mínimos aunque no haya dirsearch
-        if result.get("whatweb"):
-            result["findings"].append({
-                "severity": "info",
-                "title": f"HTTP fingerprint: {result['whatweb'][:80]}",
-            })
-        return result
-
+    # --- Dirsearch (wordlist por defecto de dirsearch) ---
     out_json = outdir / f"dirsearch_{port}.json"
     try:
         subprocess.run(
             [
                 "dirsearch", "-u", url,
                 "-e", "php,html,js,txt,bak,zip",
-                "-w", wl,
                 "--format=json",
                 "-o", str(out_json),
-                "-q"
+                "--include-status", "200,301,401,403",
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -83,13 +57,24 @@ def enumerate(service, target, outdir):
             data = json.loads(out_json.read_text())
             items = data.get("results", [])
 
-            by_status = {}
+            # Filtra los soft-404 (302 que redirigen a "/")
+            filtered = []
             for it in items:
+                status = it.get("status")
+                redirect = it.get("redirect", "")
+
+                # Ignora 302 que redirigen a la raíz (soft-404)
+                if status == 302 and redirect in ("/", ""):
+                    continue
+                filtered.append(it)
+
+            by_status = {}
+            for it in filtered:
                 st = str(it.get("status", "?"))
                 by_status[st] = by_status.get(st, 0) + 1
 
             result["dirsearch"] = {
-                "total": len(items),
+                "total": len(filtered),
                 "by_status": by_status,
                 "top": [
                     {
@@ -97,10 +82,14 @@ def enumerate(service, target, outdir):
                         "status": it.get("status"),
                         "length": it.get("content-length"),
                     }
-                    for it in items[:20]
+                    for it in filtered[:20]
                 ],
             }
+
+            if filtered:
+                log.success(f"[+] dirsearch {url}: {len(filtered)} rutas")
         else:
+            log.warning(f"[!] dirsearch no generó JSON en {url}")
             result["dirsearch"] = {"total": 0, "by_status": {}, "top": []}
     except Exception as e:
         log.warning(f"[!] dirsearch falló en {url}: {e}")
