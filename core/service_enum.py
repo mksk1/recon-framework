@@ -1,5 +1,6 @@
 from modules import (ftp, http, smb, smtp, ssh, dns, rpc, ldap,
                      mysql, redis, mongo, snmp, kerberos, rsync, nfs, rdp, jenkins, generic)
+from utils.logger import log
 
 # Handlers por nombre de servicio
 NAME_HANDLERS = {
@@ -88,21 +89,17 @@ def dispatch_enum(service, target, outdir, all_services=None):
     if handler is None:
         handler = PORT_HANDLERS.get(port)
     # 3) fallback
-    handler = NAME_HANDLERS.get(name)
-    if handler is None:
-        handler = PORT_HANDLERS.get(port)
     if handler is None:
         handler = generic.enumerate
 
+    # Si es HTTP, comprobar activamente si es Jenkins
     if handler == http.enumerate:
-        scripts = service.get("scripts", {}) or {}
-        haystack = " ".join([
-            scripts.get("http-title", ""),
-            scripts.get("http-headers", ""),
-            scripts.get("http-server-header", ""),
-        ]).lower()
-
-        if "jenkins" in haystack or "x-jenkins" in haystack:
+        if jenkins.is_jenkins(target, port):
+            log.info(f"[*] {target}:{port} detectado como Jenkins")
             return jenkins.enumerate(service, target, outdir)
+
+    # Handlers que necesitan contexto global (todos los servicios)
+    if handler in (dns.enumerate, kerberos.enumerate):
+        return handler(service, target, outdir, all_services=all_services)
 
     return handler(service, target, outdir)
