@@ -1,5 +1,5 @@
 from modules import (ftp, http, smb, smtp, ssh, dns, rpc, ldap,
-                     mysql, redis, mongo, snmp, kerberos, rsync, generic)
+                     mysql, redis, mongo, snmp, kerberos, rsync, nfs, generic)
 
 # Handlers por nombre de servicio
 NAME_HANDLERS = {
@@ -11,6 +11,9 @@ NAME_HANDLERS = {
     "kerberos":     kerberos.enumerate,
     "kpasswd5":     kerberos.enumerate,
     "snmp":       snmp.enumerate,
+    "nfs":        nfs.enumerate,
+    "nfs_acl":    nfs.enumerate,
+    "nfsd":       nfs.enumerate,
     "sunrpc":     rpc.enumerate,
     "rsync":      rsync.enumerate,
     "redis":      redis.enumerate,
@@ -59,6 +62,7 @@ PORT_HANDLERS = {
     631:   http.enumerate,
     636:   ldap.enumerate,
     873:   rsync.enumerate,
+    2049:  nfs.enumerate,
     2222:  ssh.enumerate,
     3268:  ldap.enumerate,
     3269:  ldap.enumerate,
