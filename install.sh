@@ -80,6 +80,10 @@ SYSTEM_PKGS=(
     python3
     python3-pip
     python3-venv
+
+    # Dependencias Python del framework (evita PEP 668)
+    python3-tqdm
+    python3-dnspython
     python3-requests
 
     # DNS
@@ -122,6 +126,20 @@ SYSTEM_PKGS=(
 log_info "Instalando paquetes del sistema..."
 sudo apt install -y "${SYSTEM_PKGS[@]}"
 
+# --- ssh-audit (vía apt o pipx) ---
+if ! command -v ssh-audit >/dev/null; then
+    log_info "Instalando ssh-audit..."
+    if apt-cache show ssh-audit >/dev/null 2>&1; then
+        sudo apt install -y ssh-audit
+    elif command -v pipx >/dev/null; then
+        pipx install ssh-audit
+    else
+        log_warn "ssh-audit no disponible. Prueba: pipx install ssh-audit"
+    fi
+else
+    log_ok "ssh-audit ya instalado"
+fi
+
 # --- searchsploit (exploitdb) ---
 if ! command -v searchsploit >/dev/null; then
     log_info "Instalando exploitdb (searchsploit)..."
@@ -153,25 +171,15 @@ else
     log_ok "dirsearch ya instalado"
 fi
 
-# --- ssh-audit ---
-if ! command -v ssh-audit >/dev/null; then
-    log_info "Instalando ssh-audit..."
-    pip3 install --user ssh-audit 2>/dev/null || \
-        pipx install ssh-audit 2>/dev/null || \
-        log_warn "No pude instalar ssh-audit. Prueba manualmente: pipx install ssh-audit"
-else
-    log_ok "ssh-audit ya instalado"
-fi
-
 # --- dnsrecon ---
 if ! command -v dnsrecon >/dev/null; then
     log_info "Instalando dnsrecon..."
     if apt-cache show dnsrecon >/dev/null 2>&1; then
         sudo apt install -y dnsrecon
+    elif command -v pipx >/dev/null; then
+        pipx install dnsrecon
     else
-        pip3 install --user dnsrecon 2>/dev/null || \
-            pipx install dnsrecon 2>/dev/null || \
-            log_warn "No pude instalar dnsrecon."
+        log_warn "dnsrecon no disponible. Prueba: pipx install dnsrecon"
     fi
 else
     log_ok "dnsrecon ya instalado"
@@ -203,8 +211,10 @@ if [[ ! -f "$KERBRUTE_DIR/kerbrute.py" ]]; then
     curl -sSL "https://raw.githubusercontent.com/fortra/impacket/master/examples/kerbrute.py" \
         -o "$KERBRUTE_DIR/kerbrute.py" || \
         log_warn "No pude descargar kerbrute.py"
-    # Alias para poder invocarlo
+    # Alias en .bashrc
     if ! grep -q "alias kerbrute=" "$HOME/.bashrc" 2>/dev/null; then
+        echo "" >> "$HOME/.bashrc"
+        echo "# kerbrute alias" >> "$HOME/.bashrc"
         echo "alias kerbrute='python3 $KERBRUTE_DIR/kerbrute.py'" >> "$HOME/.bashrc"
         log_ok "Alias 'kerbrute' añadido a ~/.bashrc"
     fi
@@ -212,57 +222,81 @@ else
     log_ok "kerbrute ya instalado"
 fi
 
-# --- Wordlists ---
+# --- Wordlists (SecLists) ---
 if [[ "$SKIP_WORDLISTS" -eq 0 ]]; then
     WL_DIR="$HOME/wordlists"
     mkdir -p "$WL_DIR"
 
+    SECLISTS_BASE="https://raw.githubusercontent.com/danielmiessler/SecLists/master"
+
+    # HTTP
     if [[ ! -f "$WL_DIR/common.txt" ]]; then
-        log_info "Descargando wordlist 'common.txt'..."
-        curl -sSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt" \
+        log_info "Descargando wordlist HTTP (common.txt)..."
+        curl -sSL "$SECLISTS_BASE/Discovery/Web-Content/common.txt" \
              -o "$WL_DIR/common.txt" || log_warn "Fallo al descargar common.txt"
     fi
 
-    if [[ ! -f "$WL_DIR/subdomains-top1million-5000.txt" ]]; then
-        log_info "Descargando wordlist de subdominios..."
-        curl -sSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt" \
-             -o "$WL_DIR/subdomains-top1million-5000.txt" || log_warn "Fallo al descargar subdominios"
+    if [[ ! -f "$WL_DIR/big.txt" ]]; then
+        log_info "Descargando wordlist HTTP (big.txt)..."
+        curl -sSL "$SECLISTS_BASE/Discovery/Web-Content/big.txt" \
+             -o "$WL_DIR/big.txt" || log_warn "Fallo al descargar big.txt"
     fi
 
+    if [[ ! -f "$WL_DIR/raft-medium-directories-lowercase.txt" ]]; then
+        log_info "Descargando wordlist HTTP (raft-medium-directories)..."
+        curl -sSL "$SECLISTS_BASE/Discovery/Web-Content/raft-medium-directories-lowercase.txt" \
+             -o "$WL_DIR/raft-medium-directories-lowercase.txt" || \
+             log_warn "Fallo al descargar raft-medium-directories"
+    fi
+
+    # Subdominios
+    if [[ ! -f "$WL_DIR/subdomains-top1million-5000.txt" ]]; then
+        log_info "Descargando wordlist de subdominios (top 5000)..."
+        curl -sSL "$SECLISTS_BASE/Discovery/DNS/subdomains-top1million-5000.txt" \
+             -o "$WL_DIR/subdomains-top1million-5000.txt" || \
+             log_warn "Fallo al descargar subdominios"
+    fi
+
+    if [[ ! -f "$WL_DIR/shubs-subdomains.txt" ]]; then
+        log_info "Descargando wordlist de subdominios (shubs)..."
+        curl -sSL "$SECLISTS_BASE/Discovery/DNS/shubs-subdomains.txt" \
+             -o "$WL_DIR/shubs-subdomains.txt" || \
+             log_warn "Fallo al descargar shubs-subdomains"
+    fi
+
+    # Usuarios
     if [[ ! -f "$WL_DIR/userlist.txt" ]]; then
-        log_info "Creando wordlist de usuarios por defecto..."
-        cat > "$WL_DIR/userlist.txt" << 'EOF'
-administrator
-Administrator
-admin
-Admin
-guest
-Guest
-root
-user
-test
-testuser
-EOF
+        log_info "Descargando wordlist de usuarios (top-usernames-shortlist)..."
+        curl -sSL "$SECLISTS_BASE/Usernames/top-usernames-shortlist.txt" \
+             -o "$WL_DIR/userlist.txt" || log_warn "Fallo al descargar userlist"
+    fi
+
+    if [[ ! -f "$WL_DIR/xato-usernames.txt" ]]; then
+        log_info "Descargando wordlist de usuarios (xato-net-10-million)..."
+        curl -sSL "$SECLISTS_BASE/Usernames/xato-net-10-million-usernames.txt" \
+             -o "$WL_DIR/xato-usernames.txt" || \
+             log_warn "Fallo al descargar xato-usernames"
+    fi
+
+    # Contraseñas
+    if [[ ! -f "$WL_DIR/rockyou.txt" ]]; then
+        log_info "Descargando wordlist de contraseñas (rockyou)..."
+        curl -sSL "$SECLISTS_BASE/Passwords/Leaked-Databases/rockyou.txt.tar.gz" \
+             -o /tmp/rockyou.txt.tar.gz && \
+            tar -xzf /tmp/rockyou.txt.tar.gz -C "$WL_DIR" && \
+            rm -f /tmp/rockyou.txt.tar.gz || \
+            log_warn "Fallo al descargar rockyou.txt"
     fi
 
     if [[ ! -f "$WL_DIR/passwords.txt" ]]; then
-        log_info "Creando wordlist de contraseñas por defecto..."
-        cat > "$WL_DIR/passwords.txt" << 'EOF'
-password
-Password1
-Password123
-Password123!
-P@ssw0rd
-P@ssw0rd123
-Passw0rd!2026
-admin
-administrator
-letmein
-welcome
-EOF
+        log_info "Descargando wordlist de contraseñas comunes..."
+        curl -sSL "$SECLISTS_BASE/Passwords/Common-Credentials/10-million-password-list-top-100000.txt" \
+             -o "$WL_DIR/passwords.txt" || \
+             log_warn "Fallo al descargar passwords"
     fi
 
     log_ok "Wordlists en $WL_DIR"
+    ls -lh "$WL_DIR"
 fi
 
 # --- Alias 'enumini' ---
@@ -331,12 +365,19 @@ for cmd in "${!TOOLS[@]}"; do
     fi
 done
 
-# Kerbrute es especial (no está en PATH)
+# Comprobaciones especiales
 if [[ -f "$HOME/scripts/kerbrute/kerbrute.py" ]]; then
     log_ok "kerbrute.py → cliente Kerberos"
 else
     log_warn "Falta: kerbrute.py (cliente Kerberos)"
     MISSING+=("kerbrute")
+fi
+
+if python3 -c "import tqdm" 2>/dev/null; then
+    log_ok "tqdm → barra de progreso"
+else
+    log_warn "Falta: python3-tqdm"
+    MISSING+=("tqdm")
 fi
 
 echo
