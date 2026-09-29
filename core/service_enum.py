@@ -88,17 +88,21 @@ def dispatch_enum(service, target, outdir, all_services=None):
     if handler is None:
         handler = PORT_HANDLERS.get(port)
     # 3) fallback
+    handler = NAME_HANDLERS.get(name)
+    if handler is None:
+        handler = PORT_HANDLERS.get(port)
     if handler is None:
         handler = generic.enumerate
 
-    # Si es HTTP y huele a Jenkins → usar jenkins
     if handler == http.enumerate:
-        title = (service.get("scripts", {}) or {}).get("http-title", "")
-        if "jenkins" in title.lower():
-            return jenkins.enumerate(service, target, outdir)
+        scripts = service.get("scripts", {}) or {}
+        haystack = " ".join([
+            scripts.get("http-title", ""),
+            scripts.get("http-headers", ""),
+            scripts.get("http-server-header", ""),
+        ]).lower()
 
-    # Handlers que necesitan contexto global (todos los servicios)
-    if handler in (dns.enumerate, kerberos.enumerate):
-        return handler(service, target, outdir, all_services=all_services)
+        if "jenkins" in haystack or "x-jenkins" in haystack:
+            return jenkins.enumerate(service, target, outdir)
 
     return handler(service, target, outdir)
