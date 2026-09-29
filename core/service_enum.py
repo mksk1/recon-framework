@@ -91,6 +91,12 @@ def dispatch_enum(service, target, outdir, all_services=None):
     if handler is None:
         handler = generic.enumerate
 
+    # Si es HTTP y huele a Jenkins → usar jenkins
+    if handler == http.enumerate:
+        title = (service.get("scripts", {}) or {}).get("http-title", "")
+        if "jenkins" in title.lower():
+            return jenkins.enumerate(service, target, outdir)
+
     # Handlers que necesitan contexto global (todos los servicios)
     if handler in (dns.enumerate, kerberos.enumerate):
         return handler(service, target, outdir, all_services=all_services)
