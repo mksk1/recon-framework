@@ -1,5 +1,5 @@
 from modules import (ftp, http, smb, smtp, ssh, dns, rpc, ldap,
-                     mysql, redis, mongo, snmp, kerberos, rsync, nfs, generic)
+                     mysql, redis, mongo, snmp, kerberos, rsync, nfs, rdp, generic)
 
 # Handlers por nombre de servicio
 NAME_HANDLERS = {
@@ -28,6 +28,8 @@ NAME_HANDLERS = {
     "smb":        smb.enumerate,
     "netbios-ssn": smb.enumerate,
     "microsoft-ds": smb.enumerate,
+    "ms-wbt-server": rdp.enumerate,
+    "rdp":           rdp.enumerate,
     "smtp":       smtp.enumerate,
     "smtps":      smtp.enumerate,
     "submission": smtp.enumerate,
@@ -67,6 +69,7 @@ PORT_HANDLERS = {
     3268:  ldap.enumerate,
     3269:  ldap.enumerate,
     3306:  mysql.enumerate,
+    3389:  rdp.enumerate,
     6379:  redis.enumerate,
     8080:  http.enumerate,
     8443:  http.enumerate,
