@@ -72,10 +72,51 @@ sudo apt update -qq
 
 # --- Paquetes del sistema ---
 SYSTEM_PKGS=(
-    nmap git curl wget python3 python3-pip python3-venv
-    dnsutils ftp whatweb dirsearch smbmap ldap-utils
-    redis-tools default-mysql-client snmp snmpd
-    rsync nfs-common
+    # Core
+    nmap
+    git
+    curl
+    wget
+    python3
+    python3-pip
+    python3-venv
+    python3-requests
+
+    # DNS
+    dnsutils
+
+    # FTP
+    ftp
+
+    # HTTP
+    whatweb
+    dirsearch
+
+    # SMB
+    smbmap
+
+    # LDAP
+    ldap-utils
+
+    # Redis
+    redis-tools
+
+    # MySQL
+    default-mysql-client
+
+    # SNMP
+    snmp
+
+    # NFS / rpcbind
+    nfs-common
+    rpcbind
+
+    # Rsync
+    rsync
+
+    # Utilidades
+    tcpdump
+    netcat-openbsd
 )
 
 log_info "Instalando paquetes del sistema..."
@@ -154,6 +195,23 @@ else
     log_ok "mongosh ya instalado"
 fi
 
+# --- kerbrute (Impacket) ---
+KERBRUTE_DIR="$HOME/scripts/kerbrute"
+if [[ ! -f "$KERBRUTE_DIR/kerbrute.py" ]]; then
+    log_info "Instalando kerbrute (Impacket)..."
+    mkdir -p "$KERBRUTE_DIR"
+    curl -sSL "https://raw.githubusercontent.com/fortra/impacket/master/examples/kerbrute.py" \
+        -o "$KERBRUTE_DIR/kerbrute.py" || \
+        log_warn "No pude descargar kerbrute.py"
+    # Alias para poder invocarlo
+    if ! grep -q "alias kerbrute=" "$HOME/.bashrc" 2>/dev/null; then
+        echo "alias kerbrute='python3 $KERBRUTE_DIR/kerbrute.py'" >> "$HOME/.bashrc"
+        log_ok "Alias 'kerbrute' añadido a ~/.bashrc"
+    fi
+else
+    log_ok "kerbrute ya instalado"
+fi
+
 # --- Wordlists ---
 if [[ "$SKIP_WORDLISTS" -eq 0 ]]; then
     WL_DIR="$HOME/wordlists"
@@ -169,6 +227,39 @@ if [[ "$SKIP_WORDLISTS" -eq 0 ]]; then
         log_info "Descargando wordlist de subdominios..."
         curl -sSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt" \
              -o "$WL_DIR/subdomains-top1million-5000.txt" || log_warn "Fallo al descargar subdominios"
+    fi
+
+    if [[ ! -f "$WL_DIR/userlist.txt" ]]; then
+        log_info "Creando wordlist de usuarios por defecto..."
+        cat > "$WL_DIR/userlist.txt" << 'EOF'
+administrator
+Administrator
+admin
+Admin
+guest
+Guest
+root
+user
+test
+testuser
+EOF
+    fi
+
+    if [[ ! -f "$WL_DIR/passwords.txt" ]]; then
+        log_info "Creando wordlist de contraseñas por defecto..."
+        cat > "$WL_DIR/passwords.txt" << 'EOF'
+password
+Password1
+Password123
+Password123!
+P@ssw0rd
+P@ssw0rd123
+Passw0rd!2026
+admin
+administrator
+letmein
+welcome
+EOF
     fi
 
     log_ok "Wordlists en $WL_DIR"
@@ -223,10 +314,11 @@ declare -A TOOLS=(
     ["mysql"]="cliente MySQL"
     ["mongosh"]="cliente MongoDB"
     ["snmpwalk"]="cliente SNMP"
+    ["showmount"]="NFS showmount"
+    ["rsync"]="cliente rsync"
     ["ssh-audit"]="auditoría SSH"
     ["dnsrecon"]="enumeración DNS"
     ["dig"]="consultas DNS"
-    ["rsync"]="sincronización de ficheros"
 )
 
 MISSING=()
@@ -238,6 +330,14 @@ for cmd in "${!TOOLS[@]}"; do
         MISSING+=("$cmd")
     fi
 done
+
+# Kerbrute es especial (no está en PATH)
+if [[ -f "$HOME/scripts/kerbrute/kerbrute.py" ]]; then
+    log_ok "kerbrute.py → cliente Kerberos"
+else
+    log_warn "Falta: kerbrute.py (cliente Kerberos)"
+    MISSING+=("kerbrute")
+fi
 
 echo
 if [[ ${#MISSING[@]} -eq 0 ]]; then
