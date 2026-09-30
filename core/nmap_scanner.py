@@ -6,21 +6,24 @@ from utils.logger import log
 
 # Scripts NSE específicos por puerto TCP
 NSE_SCRIPTS_BY_PORT = {
-    53:   "dns-nsid",
-    88:   "krb5-enum-users",
-    111:  "rpcinfo",
-    139:  "smb-os-discovery,smb-enum-shares,smb-enum-users,smb-security-mode",
-    389:  "ldap-rootdse,ldap-search",
-    445:  "smb-os-discovery,smb-enum-shares,smb-enum-users,smb-security-mode",
-    636:  "ssl-cert",
-    1433: "ms-sql-info,ms-sql-empty-password",
-    2049: "nfs-showmount,nfs-ls",
-    3306: "mysql-info,mysql-databases,mysql-users,mysql-variables,mysql-empty-password",
-    3389: "rdp-enum-encryption,rdp-ntlm-info",
-    5432: "pgsql-brute",
-    5900: "vnc-info",
-    6379: "redis-info,redis-brute",
-    8080: "http-title,http-headers",
+    53:    "dns-nsid",
+    88:    "krb5-enum-users",
+    111:   "rpcinfo",
+    139:   "smb-os-discovery,smb-enum-shares,smb-enum-users,smb-security-mode",
+    389:   "ldap-rootdse,ldap-search",
+    445:   "smb-os-discovery,smb-enum-shares,smb-enum-users,smb-security-mode",
+    636:   "ssl-cert",
+    1433:  "ms-sql-info,ms-sql-empty-password",
+    2049:  "nfs-showmount,nfs-ls",
+    3306:  "mysql-info,mysql-databases,mysql-users,mysql-variables,mysql-empty-password",
+    3389:  "rdp-enum-encryption,rdp-ntlm-info",
+    5432:  "pgsql-brute",
+    5900:  "vnc-info,vnc-title,realvnc-auth-bypass",
+    5901:  "vnc-info,vnc-title",
+    5902:  "vnc-info,vnc-title",
+    5903:  "vnc-info,vnc-title,realvnc-auth-bypass",   # <-- añadido
+    6379:  "redis-info,redis-brute",
+    8080:  "http-title,http-headers",
     27017: "mongodb-info,mongodb-databases",
 }
 
@@ -68,12 +71,18 @@ class NmapScanner:
     def detect_services(self, ports):
         xml = self.outdir / "nmap_services.xml"
 
-        # Construye lista de scripts según los puertos detectados
         scripts = set()
         for p in ports:
             if p in NSE_SCRIPTS_BY_PORT:
                 for s in NSE_SCRIPTS_BY_PORT[p].split(","):
                     scripts.add(s.strip())
+            # VNC: cualquier puerto 5900-5999
+            elif 5900 <= p <= 5999:
+                scripts.add("vnc-info")
+                scripts.add("vnc-title")
+                # realvnc-auth-bypass solo tiene sentido en 5900/5901
+                if p in (5900, 5901):
+                    scripts.add("realvnc-auth-bypass")
 
         pstr = ",".join(str(p) for p in ports)
         args = ["-sVC", "-p", pstr, "-Pn"]

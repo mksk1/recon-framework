@@ -1,5 +1,5 @@
 from modules import (ftp, http, smb, smtp, ssh, dns, rpc, ldap,
-                     mysql, redis, mongo, snmp, kerberos, rsync, nfs, rdp, jenkins, generic)
+                     mysql, redis, mongo, snmp, kerberos, rsync, nfs, rdp, jenkins, vnc, generic)
 from utils.logger import log
 
 # Handlers por nombre de servicio
@@ -19,6 +19,9 @@ NAME_HANDLERS = {
     "jenkins":    jenkins.enumerate,
     "rsync":      rsync.enumerate,
     "redis":      redis.enumerate,
+    "vnc":        vnc.enumerate,
+    "vnc-http":   vnc.enumerate,
+    "realvnc":    vnc.enumerate,
     "mongo":      mongo.enumerate,
     "mongodb":    mongo.enumerate,
     "mongod":     mongo.enumerate,
@@ -72,6 +75,9 @@ PORT_HANDLERS = {
     3269:  ldap.enumerate,
     3306:  mysql.enumerate,
     3389:  rdp.enumerate,
+    5900:  vnc.enumerate,
+    5901:  vnc.enumerate,
+    5902:  vnc.enumerate,
     6379:  redis.enumerate,
     8080:  http.enumerate,
     8443:  http.enumerate,
